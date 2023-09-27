@@ -4,6 +4,8 @@ use std::path::Path;
 use std::process::Command;
 
 use fs_extra::{copy_items, dir::CopyOptions, remove_items};
+use lazy_static::lazy_static;
+use regex::{Regex, RegexBuilder};
 use symlink::symlink_dir;
 
 use crate::util::*;
@@ -84,7 +86,7 @@ fn create_android_project(manifest_path: &Path, target_artifacts: &HashMap<Strin
   copy_items(
     &[Path::new(&*get_env_var("SDL")).join("android-project")],
     Path::new(manifest_dir).join("target"),
-    &CopyOptions::new().skip_exist(true),
+    &CopyOptions::new().overwrite(true),
   )
   .unwrap();
 
@@ -122,6 +124,17 @@ fn create_android_project(manifest_path: &Path, target_artifacts: &HashMap<Strin
     "app/src/main/res/values/strings.xml",
     vec![("Game", &*appname)],
   );
+
+  //add permission entries
+  for permission in get_toml_string_vec(
+    manifest_path,
+    ["package", "metadata", "android", "permissions"],
+  )
+  .unwrap_or(vec![])
+  {
+    println!("Adding permission entry for permission {}", permission);
+    add_uses_permission_entry(manifest_dir, &permission);
+  }
 
   // Remove C sources
   remove_items(&[manifest_dir.join("target/android-project/app/jni/src")]).unwrap();
@@ -169,29 +182,48 @@ fn create_android_project(manifest_path: &Path, target_artifacts: &HashMap<Strin
   }
 }
 
+lazy_static! {
+  static ref MANIFEST_TAG_CONTENT_REGEX: Regex = RegexBuilder::new("<manifest.*?>(.*)</manifest>")
+    .dot_matches_new_line(true)
+    .build()
+    .expect("invalid manifest tag regex");
+}
+
+fn add_uses_permission_entry(manifest_dir: &Path, permission: &str) {
+  let path = manifest_dir.join("target/android-project/app/src/main/AndroidManifest.xml");
+  let mut content = read_to_string(&path).expect(&format!("can't read manifest {:?}", path));
+  let captures = MANIFEST_TAG_CONTENT_REGEX
+    .captures(&content)
+    .expect("can't find manifest tag content");
+  let content_match = captures.get(1).expect("can't get content of manifest tag");
+  let tag_content = content_match.as_str();
+
+  let permission_entry = format!(
+    "<uses-permission android:name=\"android.permission.{}\"/>",
+    permission.to_uppercase()
+  );
+  if tag_content.contains(&permission_entry) {
+    return;
+  }
+
+  content.insert_str(content_match.end(), &permission_entry);
+
+  write(&path, &content).expect("can't write to manifest file");
+}
+
 fn change_android_project_file(
   manifest_dir: &Path,
   file_name: &str,
   replacements: Vec<(&str, &str)>,
 ) {
-  let mut content = read_to_string(
-    Path::new(&*get_env_var("SDL"))
-      .join("android-project")
-      .join(file_name),
-  )
-  .expect("Unable to read manifest file");
+  let path = manifest_dir.join("target/android-project").join(file_name);
+  let mut content = read_to_string(&path).expect(&format!("can't read project file: {:?}", path));
 
   for (from, to) in replacements {
     content = content.replace(from, to);
   }
 
-  //println!("{:?}",manifest_dir.join("target/android-project").join(file_name));
-
-  write(
-    manifest_dir.join("target/android-project").join(file_name),
-    &content,
-  )
-  .expect("Unable to write file");
+  write(&path, &content).expect("unable to write file");
 }
 
 pub fn sign_android(manifest_path: &Path, ks_file: Option<String>, ks_pass: Option<String>) {
@@ -318,5 +350,32 @@ pub fn build_android_project(
 
   if matches!(profile, BuildProfile::Release) {
     sign_android(manifest_path, ks_file, ks_pass);
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use crate::android_project::MANIFEST_TAG_CONTENT_REGEX;
+
+  #[test]
+  fn manifest_regex() {
+    let mut manifest_file_content =
+      String::from("<some header>\n<manifest option1\n\toption2>\n\t<hello world>\n</manifest>\n");
+    let captures = MANIFEST_TAG_CONTENT_REGEX
+      .captures(&manifest_file_content)
+      .unwrap();
+    let content_match = captures.get(1).unwrap();
+    assert_eq!(content_match.as_str(), "\n\t<hello world>\n");
+
+    manifest_file_content.insert_str(content_match.end(), "\t<permission>\n");
+
+    let captures = MANIFEST_TAG_CONTENT_REGEX
+      .captures(&manifest_file_content)
+      .unwrap();
+    let content_match = captures.get(1).unwrap();
+    assert_eq!(
+      content_match.as_str(),
+      "\n\t<hello world>\n\t<permission>\n"
+    );
   }
 }

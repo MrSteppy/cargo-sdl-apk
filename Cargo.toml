@@ -37,3 +37,9 @@ version = "0.1.0"
 
 [dependencies.toml]
 version = "0.7.3"
+
+[dependencies.regex]
+version = "1.9.5"
+
+[dependencies.lazy_static]
+version = "1.4.0"

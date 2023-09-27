@@ -167,7 +167,7 @@ pub fn build_bin_as_lib(
     .collect();
 
   let compile_options = CompileOptions {
-    build_config: build_config,
+    build_config,
     cli_features: CliFeatures::new_all(false),
     spec: Packages::Packages(Vec::new()),
     filter: CompileFilter::Only {
