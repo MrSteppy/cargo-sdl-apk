@@ -13,7 +13,7 @@ projects as well.
 
 ## Basic usage
 
-1. Install with `cargo install cargo-sdl-apk`.
+1. Build with `cargo build --release` and copy executable into your project or wherever you want to have it.
 2. Make sure you have the following:
     * The SDL source, clone it from [here](https://github.com/libsdl-org/SDL). Make sure you have the `release-2.26.x`
       branch.
@@ -24,12 +24,9 @@ projects as well.
     * `ANDROID_HOME` pointing to the Android SDK.
     * `ANDROID_NDK_HOME` pointing to the Android NDK.
     * `SDL` pointing to the SDL source dir.
-4. Run `cargo sdl-apk build` or `cargo sdl-apk run` from inside your SDL application crate. You can also use
-   `cargo sdl-apk run --example some_example` to run a crate example, in a similar way as you would do with
-   cargo.
+4. Run `./cargo-sdl-apk build`
 
 ## Project setup
 
 The entry point for your application must be called `SDL_main` and use the attribute `#[no_mangle]`. Here is
-an [example project](https://github.com/limikael/cargo-sdl-apk/tree/master/example-project). To build/run the
-project, cd into it and run `cargo sdl-apk build` or `cargo sdl-apk run`.
+an [example project](https://github.com/limikael/cargo-sdl-apk/tree/master/example-project). 

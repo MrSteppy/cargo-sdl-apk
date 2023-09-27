@@ -199,7 +199,7 @@ fn add_uses_permission_entry(manifest_dir: &Path, permission: &str) {
   let tag_content = content_match.as_str();
 
   let permission_entry = format!(
-    "<uses-permission android:name=\"android.permission.{}\"/>",
+    "\t<uses-permission android:name=\"android.permission.{}\"/>\n",
     permission.to_uppercase()
   );
   if tag_content.contains(&permission_entry) {
