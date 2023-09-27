@@ -1,36 +1,37 @@
 use std::fs::canonicalize;
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
-mod build_bin_as_lib;
+use android_project::*;
 use build_bin_as_lib::*;
-
-mod util;
 use util::*;
 
-mod android_project;
-use android_project::*;
+mod build_bin_as_lib;
 
-#[derive(Clone,Copy)]
+mod util;
+
+mod android_project;
+
+#[derive(Clone, Copy)]
 pub enum BuildProfile {
-    Debug,
-    Release
+  Debug,
+  Release,
 }
 
 impl BuildProfile {
-    pub fn to_string(&self)->String {
-        match self {
-            BuildProfile::Debug=>"debug".to_string(),
-            BuildProfile::Release=>"release".to_string()
-        }
+  pub fn to_string(&self) -> String {
+    match self {
+      BuildProfile::Debug => "debug".to_string(),
+      BuildProfile::Release => "release".to_string(),
     }
+  }
 
-    pub fn get_requested_profile(&self) -> String {
-        match self {
-            BuildProfile::Debug => "dev".to_string(),
-            _ => self.to_string(),
-        }
+  pub fn get_requested_profile(&self) -> String {
+    match self {
+      BuildProfile::Debug => "dev".to_string(),
+      _ => self.to_string(),
     }
+  }
 }
 
 const HELP: &str = "
@@ -54,193 +55,208 @@ OPTIONS:
 
 #[derive(Debug)]
 struct SdlApkArgs {
-    manifest_path: String,
-    command: String,
-    example: Option<String>,
-    release: bool,
-    ks_file: Option<String>,
-    ks_pass: Option<String>,
+  manifest_path: String,
+  command: String,
+  example: Option<String>,
+  release: bool,
+  ks_file: Option<String>,
+  ks_pass: Option<String>,
 }
 
-fn parse_args()->Result<SdlApkArgs, pico_args::Error> {
-    let mut pargs = pico_args::Arguments::from_env();
+fn parse_args() -> Result<SdlApkArgs, pico_args::Error> {
+  let mut pargs = pico_args::Arguments::from_env();
 
-    let mut cmd=pargs.free_from_str()?;
-    if cmd=="sdl-apk" {
-        cmd=pargs.free_from_str()?;
-    }
+  let mut cmd = pargs.free_from_str()?;
+  if cmd == "sdl-apk" {
+    cmd = pargs.free_from_str()?;
+  }
 
-    let args=SdlApkArgs {
-        manifest_path: pargs.value_from_str("--manifest-path").unwrap_or("Cargo.toml".to_string()),
-        example: pargs.opt_value_from_str("--example")?,
-        ks_file: pargs.opt_value_from_str("--ks-file")?,
-        ks_pass: pargs.opt_value_from_str("--ks-pass")?,
-        release: pargs.contains("--release"),
-        command: cmd
-    };
+  let args = SdlApkArgs {
+    manifest_path: pargs
+      .value_from_str("--manifest-path")
+      .unwrap_or("Cargo.toml".to_string()),
+    example: pargs.opt_value_from_str("--example")?,
+    ks_file: pargs.opt_value_from_str("--ks-file")?,
+    ks_pass: pargs.opt_value_from_str("--ks-pass")?,
+    release: pargs.contains("--release"),
+    command: cmd,
+  };
 
-    let remaining = pargs.finish();
-    if !remaining.is_empty() {
-        return Err(pico_args::Error::ArgumentParsingFailed{
-            cause: format!("Unknown arguments: {:?}.", remaining)
-        });
-    }
+  let remaining = pargs.finish();
+  if !remaining.is_empty() {
+    return Err(pico_args::Error::ArgumentParsingFailed {
+      cause: format!("Unknown arguments: {:?}.", remaining),
+    });
+  }
 
-    Ok(args)
+  Ok(args)
 }
 
 fn build_android(
-        manifest_path: &Path, 
-        build_target:BuildTarget, 
-        build_profile:BuildProfile,
-        ks_file: Option<String>,
-        ks_pass: Option<String>
-    ) {
-    for k in &["ANDROID_HOME", "ANDROID_NDK_HOME", "SDL"] {
-        let _check_val = get_env_var(k);
-    }
+  manifest_path: &Path,
+  build_target: BuildTarget,
+  build_profile: BuildProfile,
+  ks_file: Option<String>,
+  ks_pass: Option<String>,
+) {
+  for k in &["ANDROID_HOME", "ANDROID_NDK_HOME", "SDL"] {
+    let _check_val = get_env_var(k);
+  }
 
-    let targets=vec![
-    	"aarch64-linux-android",
-    	"armv7-linux-androideabi",
-    	"i686-linux-android",
-    	"x86_64-linux-android"
-    ];
+  let targets = vec![
+    "aarch64-linux-android",
+    "armv7-linux-androideabi",
+    "i686-linux-android",
+    "x86_64-linux-android",
+  ];
 
-    build_sdl_for_android(&targets,build_profile);
-    let target_artifacts=build_bin_as_lib(&manifest_path,build_target,&targets,build_profile);
-    build_android_project(&manifest_path,&target_artifacts,build_profile,ks_file,ks_pass);
-    copy_apk(&manifest_path, build_profile);
+  build_sdl_for_android(&targets, build_profile);
+  let target_artifacts = build_bin_as_lib(&manifest_path, build_target, &targets, build_profile);
+  build_android_project(
+    &manifest_path,
+    &target_artifacts,
+    build_profile,
+    ks_file,
+    ks_pass,
+  );
+  copy_apk(&manifest_path, build_profile);
 }
 
 fn copy_apk(manifest_path: &Path, build_profile: BuildProfile) {
-    let manifest_dir = manifest_path.parent().unwrap();
-    let apk_path = manifest_dir.join(get_path_to_apk(build_profile));
-    let target_path = manifest_dir.join("target").join(build_profile.to_string()).join("app.apk");
-    if let Err(e) = std::fs::copy(&apk_path, &target_path) {
-        eprintln!("Failed to copy apk from {} to {}: {}", apk_path.display(), target_path.display(), e);
-    }
+  let manifest_dir = manifest_path.parent().unwrap();
+  let apk_path = manifest_dir.join(get_path_to_apk(build_profile));
+  let target_path = manifest_dir
+    .join("target")
+    .join(build_profile.to_string())
+    .join("app.apk");
+  if let Err(e) = std::fs::copy(&apk_path, &target_path) {
+    eprintln!(
+      "Failed to copy apk from {} to {}: {}",
+      apk_path.display(),
+      target_path.display(),
+      e
+    );
+  }
 }
 
 fn get_path_to_apk(build_profile: BuildProfile) -> String {
-    format!("target/android-project/app/build/outputs/apk/{}", match build_profile {
-        BuildProfile::Debug=>"debug/app-debug.apk",
-        BuildProfile::Release=>"release/app-release.apk",
-    })
+  format!(
+    "target/android-project/app/build/outputs/apk/{}",
+    match build_profile {
+      BuildProfile::Debug => "debug/app-debug.apk",
+      BuildProfile::Release => "release/app-release.apk",
+    }
+  )
 }
 
 fn run_android(
-        manifest_path: &Path, 
-        build_target:BuildTarget, 
-        build_profile:BuildProfile,
-        ks_file: Option<String>,
-        ks_pass: Option<String>
-    ) {
-    build_android(manifest_path,build_target,build_profile,ks_file,ks_pass);
+  manifest_path: &Path,
+  build_target: BuildTarget,
+  build_profile: BuildProfile,
+  ks_file: Option<String>,
+  ks_pass: Option<String>,
+) {
+  build_android(manifest_path, build_target, build_profile, ks_file, ks_pass);
 
-    let manifest_dir=manifest_path.parent().unwrap();
+  let manifest_dir = manifest_path.parent().unwrap();
 
-    let appid = get_android_app_id(manifest_path);
-    let output_apk = get_path_to_apk(build_profile);
+  let appid = get_android_app_id(manifest_path);
+  let output_apk = get_path_to_apk(build_profile);
 
-    let p = Path::new(&*get_env_var("ANDROID_HOME")).join("platform-tools/adb");
-    assert!(Command::new(p.clone())
-        .args([
-            "-d",
-            "install",
-            "-r",
-            &*manifest_dir
-                .join(output_apk)
-                .into_os_string().into_string().unwrap()
-        ])
-        .status()
+  let p = Path::new(&*get_env_var("ANDROID_HOME")).join("platform-tools/adb");
+  assert!(Command::new(p.clone())
+    .args([
+      "-d",
+      "install",
+      "-r",
+      &*manifest_dir
+        .join(output_apk)
+        .into_os_string()
+        .into_string()
         .unwrap()
-        .success());
+    ])
+    .status()
+    .unwrap()
+    .success());
 
-    assert!(Command::new(p.clone())
-        .args(["shell", "am", "force-stop", &*appid])
-        .status()
-        .unwrap()
-        .success());
+  assert!(Command::new(p.clone())
+    .args(["shell", "am", "force-stop", &*appid])
+    .status()
+    .unwrap()
+    .success());
 
-    let mut activity = appid.clone();
-    activity.push_str("/.MainActivity");
+  let mut activity = appid.clone();
+  activity.push_str("/.MainActivity");
 
-    assert!(Command::new(p.clone())
-        .args(["shell", "am", "start", "-W", "-n", &*activity])
-        .status()
-        .unwrap()
-        .success());
+  assert!(Command::new(p.clone())
+    .args(["shell", "am", "start", "-W", "-n", &*activity])
+    .status()
+    .unwrap()
+    .success());
 
-    let pid_vec = Command::new(p.clone())
-        .arg("shell")
-        .arg("pidof")
-        .arg(&*appid)
-        .output()
-        .unwrap() //except("Can't get pid")
-        .stdout;
+  let pid_vec = Command::new(p.clone())
+    .arg("shell")
+    .arg("pidof")
+    .arg(&*appid)
+    .output()
+    .unwrap() //except("Can't get pid")
+    .stdout;
 
-    let pid = std::str::from_utf8(&pid_vec).unwrap().trim();
-    let pid: u32 = pid
-        .parse()
-        .unwrap();
+  let pid = std::str::from_utf8(&pid_vec).unwrap().trim();
+  let pid: u32 = pid.parse().unwrap();
 
-    println!("Launched with PID: {}", pid);
+  println!("Launched with PID: {}", pid);
 
-    assert!(Command::new(p.clone())
-        .args(["logcat","-v","color","--pid",&*pid.to_string()])
-        .status()
-        .unwrap()
-        .success());
+  assert!(Command::new(p.clone())
+    .args(["logcat", "-v", "color", "--pid", &*pid.to_string()])
+    .status()
+    .unwrap()
+    .success());
 }
 
 fn main() {
-    let args=match parse_args() {
-        Ok(v)=>v,
-        Err(e)=>{
-            eprintln!("Error: {}.", e);
-            println!("{}",HELP);
-            std::process::exit(1);
-        }
-    };
-
-    let manifest_path=canonicalize(args.manifest_path).unwrap();
-
-    let build_target=match &args.example {
-        None=>BuildTarget::Bin,
-        Some(s)=>BuildTarget::Example(s.clone())
-    };
-
-    let build_profile=if args.release {
-        BuildProfile::Release
-    } else {
-        BuildProfile::Debug
-    };
-
-    match &*args.command {
-        "sign"=>sign_android(
-            &manifest_path,
-            args.ks_file,
-            args.ks_pass,
-        ),
-        "build"=>build_android(
-            &manifest_path,
-            build_target,
-            build_profile,
-            args.ks_file,
-            args.ks_pass
-        ),
-        "run"=>run_android(
-            &manifest_path,
-            build_target,
-            build_profile,
-            args.ks_file,
-            args.ks_pass
-        ),
-        _=>{
-            eprintln!("Unknown command: {}.", args.command);
-            println!("{}",HELP);
-            std::process::exit(1);
-        }
+  let args = match parse_args() {
+    Ok(v) => v,
+    Err(e) => {
+      eprintln!("Error: {}.", e);
+      println!("{}", HELP);
+      std::process::exit(1);
     }
+  };
+
+  let manifest_path = canonicalize(args.manifest_path).unwrap();
+
+  let build_target = match &args.example {
+    None => BuildTarget::Bin,
+    Some(s) => BuildTarget::Example(s.clone()),
+  };
+
+  let build_profile = if args.release {
+    BuildProfile::Release
+  } else {
+    BuildProfile::Debug
+  };
+
+  match &*args.command {
+    "sign" => sign_android(&manifest_path, args.ks_file, args.ks_pass),
+    "build" => build_android(
+      &manifest_path,
+      build_target,
+      build_profile,
+      args.ks_file,
+      args.ks_pass,
+    ),
+    "run" => run_android(
+      &manifest_path,
+      build_target,
+      build_profile,
+      args.ks_file,
+      args.ks_pass,
+    ),
+    _ => {
+      eprintln!("Unknown command: {}.", args.command);
+      println!("{}", HELP);
+      std::process::exit(1);
+    }
+  }
 }
