@@ -1,0 +1,1 @@
+cp target/release/cargo-sdl-apk ~/bin

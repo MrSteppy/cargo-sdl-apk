@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs;
 use std::fs::{copy, create_dir_all, read_to_string, write};
 use std::path::Path;
 use std::process::Command;
@@ -7,6 +8,7 @@ use fs_extra::{copy_items, dir::CopyOptions, remove_items};
 use lazy_static::lazy_static;
 use regex::{Regex, RegexBuilder};
 use symlink::symlink_dir;
+use walkdir::WalkDir;
 
 use crate::util::*;
 use crate::BuildProfile;
@@ -86,7 +88,7 @@ fn create_android_project(manifest_path: &Path, target_artifacts: &HashMap<Strin
   copy_items(
     &[Path::new(&*get_env_var("SDL")).join("android-project")],
     Path::new(manifest_dir).join("target"),
-    &CopyOptions::new().overwrite(true),
+    &CopyOptions::new().skip_exist(true),
   )
   .unwrap();
 
@@ -101,6 +103,7 @@ fn create_android_project(manifest_path: &Path, target_artifacts: &HashMap<Strin
 		import org.libsdl.app.SDLActivity;
 
 		public class MainActivity extends SDLActivity {
+
 		}
 	";
   let main_class = str::replace(main_class, "$APP", &appid);
@@ -182,6 +185,41 @@ fn create_android_project(manifest_path: &Path, target_artifacts: &HashMap<Strin
   }
 }
 
+fn rename_package(manifest_dir: &Path, app_id: &str) {
+  let java_dir = manifest_dir.join("target/android-project/app/src/main/java");
+  let from_dir = java_dir.join("org/libsdl/app");
+  let to_dir = java_dir.join(app_id.replace(".", "/"));
+
+  //move items to correct package
+  let read_dir = fs::read_dir(&from_dir).expect("can't open java src directory");
+  let directory_contents = read_dir
+    .map(|entry| {
+      entry
+        .expect("can't access entry in java src directory")
+        .path()
+    })
+    .collect::<Vec<_>>();
+
+  copy_items(
+    &directory_contents[..],
+    &to_dir,
+    &CopyOptions::new().overwrite(true),
+  )
+  .expect("failed to move src files to correct package");
+
+  //rename references in items
+  for entry in WalkDir::new(&to_dir)
+    .into_iter()
+    .map(|entry| entry.expect("can't access java src file in new package"))
+    .filter(|entry| entry.file_type().is_file())
+  {
+    let path = entry.path();
+    let content = read_to_string(path).expect(&format!("can't read contents of {:?}", path));
+    let new_content = content.replace("org.libsdl.app", app_id);
+    write(path, new_content).expect(&format!("failed to write to {:?}", path));
+  }
+}
+
 lazy_static! {
   static ref MANIFEST_TAG_CONTENT_REGEX: Regex = RegexBuilder::new("<manifest.*?>(.*)</manifest>")
     .dot_matches_new_line(true)
@@ -233,7 +271,7 @@ pub fn sign_android(manifest_path: &Path, ks_file: Option<String>, ks_pass: Opti
 
   // Find android build tools.
   let tool_paths =
-    std::fs::read_dir(Path::new(&*get_env_var("ANDROID_HOME")).join("build-tools")).unwrap();
+    fs::read_dir(Path::new(&*get_env_var("ANDROID_HOME")).join("build-tools")).unwrap();
   let mut tool_paths: Vec<String> = tool_paths
     .map(|d| {
       d.unwrap()
